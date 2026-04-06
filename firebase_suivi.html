@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Suivi de dossier</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'IBM Plex Sans',Arial,sans-serif;background:#f8fafc;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:500px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+h1{font-size:1.3rem;text-align:center;margin-bottom:1.5rem;color:#1e40af}
+.form-input{width:100%;padding:.6rem .8rem;border:1px solid #d1d5db;border-radius:8px;font-size:1rem;text-align:center;text-transform:uppercase;letter-spacing:3px;font-weight:700}
+.btn{display:block;width:100%;padding:.7rem;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;font-weight:600}
+.error{background:#fef2f2;color:#dc2626;padding:.5rem;border-radius:6px;text-align:center;margin:1rem 0;font-size:.9rem}
+.loading{text-align:center;color:#6b7280;padding:2rem}
+.status-bar{display:flex;align-items:center;justify-content:space-between;margin:1.5rem 0;position:relative}
+.status-bar::before{content:'';position:absolute;top:50%;left:5%;right:5%;height:3px;background:#e5e7eb;transform:translateY(-50%);z-index:0}
+.step{text-align:center;z-index:1;flex:1}
+.step .dot{width:28px;height:28px;border-radius:50%;margin:0 auto 4px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid #e5e7eb;background:#fff}
+.step.done .dot{background:#22c55e;border-color:#22c55e;color:#fff}
+.step.active .dot{background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 0 0 4px rgba(37,99,235,.2)}
+.step .label{font-size:.65rem;color:#9ca3af}
+.step.done .label,.step.active .label{color:#1a1d23;font-weight:600}
+.progress-outer{width:100%;height:8px;background:#e5e7eb;border-radius:4px;margin:1rem 0;overflow:hidden}
+.progress-inner{height:100%;background:linear-gradient(90deg,#2563eb,#22c55e);border-radius:4px;transition:width .5s}
+.info-row{display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid #f3f4f6;font-size:.9rem}
+.info-row .k{color:#6b7280}
+.info-row .v{font-weight:600}
+#result{display:none}
+</style></head><body>
+<div class="card">
+<h1>&#128269; Suivi de dossier</h1>
+<div id="form-section">
+<div style="margin-bottom:1rem">
+<label style="font-size:.85rem;color:#6b7280;display:block;margin-bottom:.3rem;text-align:center">Entrez votre code de suivi</label>
+<input type="text" id="codeInput" class="form-input" placeholder="EX: A7X3K9" maxlength="6">
+</div>
+<button class="btn" onclick="lookup()">Suivre mon dossier</button>
+</div>
+<div id="error" class="error" style="display:none"></div>
+<div id="loading" class="loading" style="display:none">Recherche en cours...</div>
+<div id="result">
+<p style="text-align:center;color:#6b7280;margin-bottom:.5rem">Bonjour <strong id="rNom"></strong></p>
+<p style="text-align:center;font-size:.85rem;color:#9ca3af;margin-bottom:1rem">Dossier <span id="rNum"></span></p>
+<div class="status-bar" id="statusBar"></div>
+<div class="progress-outer"><div class="progress-inner" id="progBar" style="width:0%"></div></div>
+<p style="text-align:center;font-size:.85rem;color:#6b7280">Progression : <strong id="progText">0%</strong></p>
+<div style="margin-top:1.5rem">
+<div class="info-row"><span class="k">Documents</span><span class="v" id="rDocs">0</span></div>
+<div class="info-row"><span class="k">Remise pr&eacute;vue</span><span class="v" id="rRemise">-</span></div>
+<div class="info-row"><span class="k">Derni&egrave;re mise &agrave; jour</span><span class="v" id="rUpdated">-</span></div>
+</div>
+<button class="btn" style="margin-top:1.5rem;background:#6b7280" onclick="reset()">Suivre un autre dossier</button>
+</div>
+</div>
+<script>
+// IMPORTANT: Replace this URL with your Firebase Realtime Database URL
+var FIREBASE_URL = "";
+
+// Auto-detect from current hosting URL
+if (!FIREBASE_URL) {
+    var host = window.location.hostname;
+    if (host.endsWith('.web.app') || host.endsWith('.firebaseapp.com')) {
+        var project = host.split('.')[0];
+        FIREBASE_URL = 'https://' + project + '-default-rtdb.firebaseio.com';
+    }
+}
+
+// Check URL params
+var params = new URLSearchParams(window.location.search);
+if (params.get('code')) {
+    document.getElementById('codeInput').value = params.get('code');
+    setTimeout(lookup, 300);
+}
+if (params.get('db')) FIREBASE_URL = params.get('db');
+
+function lookup() {
+    var code = document.getElementById('codeInput').value.trim().toUpperCase();
+    if (!code || code.length < 4) { showError('Entrez un code valide'); return; }
+    if (!FIREBASE_URL) { showError('Configuration Firebase manquante'); return; }
+    document.getElementById('error').style.display = 'none';
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('result').style.display = 'none';
+    fetch(FIREBASE_URL + '/suivi/' + code + '.json')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('loading').style.display = 'none';
+            if (!data) { showError('Code introuvable'); return; }
+            showResult(data);
+        })
+        .catch(e => { document.getElementById('loading').style.display='none'; showError('Erreur de connexion'); });
+}
+function showError(msg) {
+    document.getElementById('error').textContent = msg;
+    document.getElementById('error').style.display = 'block';
+}
+function showResult(d) {
+    document.getElementById('form-section').style.display = 'none';
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('rNom').textContent = d.nom || '';
+    document.getElementById('rNum').textContent = d.numero || '';
+    document.getElementById('rDocs').textContent = d.nb_docs || '0';
+    document.getElementById('rRemise').textContent = (d.remise || '-') + ' ' + (d.heure || '');
+    document.getElementById('progBar').style.width = (d.progression || 0) + '%';
+    document.getElementById('progText').textContent = (d.progression || 0) + '%';
+    if (d.updated) {
+        var dt = new Date(d.updated);
+        document.getElementById('rUpdated').textContent = dt.toLocaleDateString('fr-FR') + ' ' + dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+    }
+    // Status bar
+    var statuts = ['attente','traduction','verifier','pret','livre'];
+    var labels = ['R\u00e9ception','Traduction','V\u00e9rification','Pr\u00eat','Livr\u00e9'];
+    var idx = statuts.indexOf(d.statut || 'attente');
+    var html = '';
+    for (var i=0; i<5; i++) {
+        var cls = i < idx ? 'done' : (i === idx ? 'active' : '');
+        html += '<div class="step '+cls+'"><div class="dot">'+(i<idx?'\u2713':(i+1))+'</div><div class="label">'+labels[i]+'</div></div>';
+    }
+    document.getElementById('statusBar').innerHTML = html;
+}
+function reset() {
+    document.getElementById('form-section').style.display = 'block';
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('codeInput').value = '';
+}
+</script>
+</body></html>
